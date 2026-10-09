@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPINN+RL 超车交互系统 — V0/V3 轨迹编辑器</title>
+<style>
+:root {
+  --bg: #0f1117; --panel: #1a1d27; --panel2: #222633; --border: #2d3142;
+  --text: #e0e0e0; --text2: #8892a8; --accent: #4fc3f7; --accent2: #66bb6a;
+  --red: #ef5350; --blue: #42a5f5; --green: #66bb6a; --orange: #ffa726;
+  --purple: #ab47bc; --gray: #78909c; --gold: #ffd54f;
+  --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg); color: var(--text); font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  overflow: hidden; height: 100vh; display: flex; flex-direction: column;
+}
+header {
+  background: linear-gradient(135deg, #1a1d27, #222633);
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+}
+header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+header .badge {
+  background: var(--accent); color: #000; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 700;
+}
+.main { display: flex; flex: 1; overflow: hidden; }
+/* ---- Left: Canvas Area ---- */
+.canvas-area { flex: 1; display: flex; flex-direction: column; padding: 8px; gap: 8px; overflow: hidden; }
+.canvas-wrap {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  flex: 1; position: relative; overflow: hidden;
+}
+#mainCanvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+.canvas-overlay {
+  position: absolute; top: 8px; left: 8px; display: flex; gap: 8px; flex-wrap: wrap;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 4px; background: rgba(0,0,0,0.6);
+  padding: 3px 8px; border-radius: 4px; font-size: 11px;
+}
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.sim-info {
+  position: absolute; bottom: 8px; left: 8px; right: 8px;
+  display: flex; gap: 12px; flex-wrap: wrap;
+  background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 6px; font-size: 11px;
+}
+.sim-info span { white-space: nowrap; }
+.sim-info b { color: var(--accent); }
+/* Charts row */
+.charts-row { display: flex; gap: 8px; height: 140px; flex-shrink: 0; }
+.chart-wrap {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  flex: 1; position: relative; overflow: hidden;
+}
+.chart-wrap h3 {
+  position: absolute; top: 2px; left: 8px; font-size: 10px; color: var(--text2);
+  z-index: 1; font-weight: 500;
+}
+canvas.chart { display: block; width: 100%; height: 100%; }
+/* ---- Right: Control Panel ---- */
+.controls {
+  width: 360px; background: var(--panel); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.controls::-webkit-scrollbar { width: 6px; }
+.controls::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.ctrl-section { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.ctrl-section h2 {
+  font-size: 12px; color: var(--accent); margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;
+}
+.ctrl-section h2::before { content: ''; width: 3px; height: 12px; background: var(--accent); border-radius: 2px; }
+.ctrl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ctrl-row label { font-size: 11px; color: var(--text2); min-width: 80px; }
+.ctrl-row input[type=range] { flex: 1; height: 4px; -webkit-appearance: none; background: var(--panel2); border-radius: 2px; outline: none; }
+.ctrl-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer;
+}
+.ctrl-row .val { font-size: 11px; color: var(--text); min-width: 40px; text-align: right; font-family: 'Consolas', monospace; }
+.ctrl-row select {
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 6px; font-size: 11px; flex: 1;
+}
+.btn-row { display: flex; gap: 6px; margin-top: 6px; }
+button {
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 5px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+  transition: all 0.15s; flex: 1; text-align: center;
+}
+button:hover { background: var(--border); }
+button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+button.primary:hover { background: #29b6f6; }
+button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+button.danger:hover { background: #e53935; }
+button.active { background: var(--green); color: #000; border-color: var(--green); }
+/* Trajectory editor */
+.traj-editor {
+  background: var(--panel2); border-radius: 6px; padding: 8px; margin-bottom: 8px;
+}
+.traj-editor h3 { font-size: 11px; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+.traj-editor h3 .dot { width: 8px; height: 8px; border-radius: 50%; }
+.traj-points { display: flex; gap: 4px; align-items: flex-end; height: 80px; }
+.traj-pt {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.traj-pt input[type=range] {
+  -webkit-appearance: slider-vertical; writing-mode: bt-lr; width: 20px; height: 60px;
+}
+.traj-pt label { font-size: 9px; color: var(--text2); }
+/* Decision log */
+.log-area {
+  background: var(--panel2); border-radius: 6px; padding: 6px;
+  max-height: 180px; overflow-y: auto; font-size: 10px;
+  font-family: 'Consolas', monospace;
+}
+.log-area::-webkit-scrollbar { width: 4px; }
+.log-area::-webkit-scrollbar-thumb { background: var(--border); }
+.log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+.log-entry .act { font-weight: 700; }
+.act-OVERTAKE { color: var(--green); }
+.act-ABORT { color: var(--red); }
+.act-HOLD { color: var(--gray); }
+.act-CONTINUE { color: var(--blue); }
+/* Reward display */
+.reward-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+reward-item { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 6px; background: var(--panel2); border-radius: 3px; }
+.reward-item span:first-child { color: var(--text2); }
+.reward-item span:last-child { font-family: 'Consolas', monospace; font-weight: 600; }
+.reward-total {
+  grid-column: 1 / -1; background: var(--accent) !important; color: #000 !important;
+  font-weight: 700; font-size: 12px !important;
+}
+/* Preset buttons */
+.preset-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.preset-btn {
+  font-size: 10px; padding: 4px 8px; flex: none;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BPINN+RL 滚动窗口超车交互系统</h1>
+  <span class="badge">Version 1 Interactive</span>
+  <span style="font-size:11px; color:var(--text2);">拖拽红/蓝控制点调整 V0/V3 轨迹 → 点击"运行仿真"查看 V6 自主超车</span>
+</header>
+
+<div class="main">
+  <!-- ===== Left: Visualization ===== -->
+  <div class="canvas-area">
+    <div class="canvas-wrap">
+      <canvas id="mainCanvas"></canvas>
+      <div class="canvas-overlay">
+        <div class="legend-item"><div class="legend-dot" style="background:#ef5350"></div>V0 红车</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#42a5f5"></div>V3 蓝车</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#66bb6a"></div>V6 绿车(自车)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ef5350;opacity:0.3"></div>V0 4σ置信带</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#42a5f5;opacity:0.3"></div>V3 4σ置信带</div>
+      </div>
+      <div class="sim-info" id="simInfo">
+        <span>时间: <b id="info-time">0.0s</b></span>
+        <span>Y间距: <b id="info-gap">0.0m</b></span>
+        <span>走廊宽度: <b id="info-corridor">0.0m</b></span>
+        <span>置信度: <b id="info-conf">0.00</b></span>
+        <span>V6速度: <b id="info-v6speed">25.0 m/s</b></span>
+        <span>动作: <b id="info-action">HOLD</b></span>
+        <span>超车状态: <b id="info-overtake">未完成</b></span>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-wrap"><h3>Y方向间距动态</h3><canvas id="gapChart" class="chart"></canvas></div>
+      <div class="chart-wrap"><h3>V6 速度曲线</h3><canvas id="speedChart" class="chart"></canvas></div>
+      <div class="chart-wrap"><h3>累积奖励</h3><canvas id="rewardChart" class="chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ===== Right: Controls ===== -->
+  <div class="controls">
+
+    <!-- Simulation Controls -->
+    <div class="ctrl-section">
+      <h2>仿真控制</h2>
+      <div class="btn-row">
+        <button class="primary" id="btnRun" onclick="toggleRun()">▶ 运行</button>
+        <button id="btnStep" onclick="stepSim()">⏭ +0.5s</button>
+        <button id="btnReset" onclick="resetSim()">↻ 重置</button>
+      </div>
+      <div class="ctrl-row" style="margin-top:6px;">
+        <label>播放速度</label>
+        <input type="range" id="speedSlider" min="0.3" max="20" step="0.1" value="3" oninput="updateSpeedInfo()">
+        <span class="val" id="speedVal">3.0x</span>
+      </div>
+      <div class="ctrl-row" style="margin-top:2px;">
+        <label style="font-size:9px; color:var(--text2);">全仿真时长</label>
+        <span style="font-size:10px; color:var(--accent); font-family:'Consolas',monospace;" id="speedTime">≈1分7秒</span>
+      </div>
+      <div class="ctrl-row" style="margin-top:4px;">
+        <label>镜头跟随</label>
+        <select id="cameraMode" onchange="state.cameraMode=this.value; render();">
+          <option value="follow" selected>传送带跟随V6</option>
+          <option value="wide">全景固定</option>
+          <option value="focus">聚焦三车</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- V0 Trajectory Editor -->
+    <div class="ctrl-section">
+      <h2>V0 红车轨迹编辑</h2>
+      <div class="traj-editor">
+        <h3><span class="dot" style="background:#ef5350"></span> Y位置 (拖拽调整)</h3>
+        <div id="v0Points" class="traj-points"></div>
+      </div>
+      <div class="ctrl-row">
+        <label>速度 (m/s)</label>
+        <input type="range" id="v0Speed" min="15" max="35" step="0.5" value="25" oninput="document.getElementById('v0SpeedVal').textContent=this.value">
+        <span class="val" id="v0SpeedVal">25</span>
+      </div>
+    </div>
+
+    <!-- V3 Trajectory Editor -->
+    <div class="ctrl-section">
+      <h2>V3 蓝车轨迹编辑</h2>
+      <div class="traj-editor">
+        <h3><span class="dot" style="background:#42a5f5"></span> Y位置 (拖拽调整)</h3>
+        <div id="v3Points" class="traj-points"></div>
+      </div>
+      <div class="ctrl-row">
+        <label>速度 (m/s)</label>
+        <input type="range" id="v3Speed" min="15" max="35" step="0.5" value="25" oninput="document.getElementById('v3SpeedVal').textContent=this.value">
+        <span class="val" id="v3SpeedVal">25</span>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div class="ctrl-section">
+      <h2>预设场景</h2>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="loadPreset('standard')">标准</button>
+        <button class="preset-btn" onclick="loadPreset('wide')">大间距</button>
+        <button class="preset-btn" onclick="loadPreset('narrow')">小间距</button>
+        <button class="preset-btn" onclick="loadPreset('oscillate')">振荡</button>
+        <button class="preset-btn" onclick="loadPreset('complex')">复杂</button>
+      </div>
+    </div>
+
+    <!-- BPINN Parameters -->
+    <div class="ctrl-section">
+      <h2>BPINN 参数</h2>
+      <div class="ctrl-row">
+        <label>多项式阶数</label>
+        <select id="polyDegree">
+          <option value="2">2 (线性+二次)</option>
+          <option value="3" selected>3 (三次)</option>
+          <option value="4">4 (四次)</option>
+          <option value="5">5 (五次)</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>MC采样数</label>
+        <input type="range" id="mcSamples" min="10" max="200" step="10" value="100" oninput="document.getElementById('mcVal').textContent=this.value">
+        <span class="val" id="mcVal">100</span>
+      </div>
+      <div class="ctrl-row">
+        <label>Dropout率</label>
+        <input type="range" id="dropoutRate" min="0.01" max="0.30" step="0.01" value="0.05" oninput="document.getElementById('dropoutVal').textContent=this.value">
+        <span class="val" id="dropoutVal">0.05</span>
+      </div>
+      <div class="ctrl-row">
+        <label>σ倍数</label>
+        <input type="range" id="sigmaMult" min="1" max="6" step="0.5" value="4" oninput="document.getElementById('sigmaVal').textContent=this.value+'σ'">
+        <span class="val" id="sigmaVal">4σ</span>
+      </div>
+      <div class="ctrl-row">
+        <label>σ_y下限</label>
+        <input type="range" id="minStdY" min="0.1" max="1.0" step="0.05" value="0.35" oninput="document.getElementById('minStdVal').textContent=this.value">
+        <span class="val" id="minStdVal">0.35</span>
+      </div>
+      <div class="ctrl-row">
+        <label>噪声幅度</label>
+        <input type="range" id="noiseLevel" min="0" max="0.2" step="0.01" value="0.05" oninput="document.getElementById('noiseVal').textContent=this.value">
+        <span class="val" id="noiseVal">0.05</span>
+      </div>
+    </div>
+
+    <!-- RL Parameters -->
+    <div class="ctrl-section">
+      <h2>RL 决策参数</h2>
+      <div class="ctrl-row">
+        <label>走廊最小宽</label>
+        <input type="range" id="corrMin" min="1.0" max="5.0" step="0.1" value="3.0" oninput="document.getElementById('corrMinVal').textContent=this.value+'m'">
+        <span class="val" id="corrMinVal">3.0m</span>
+      </div>
+      <div class="ctrl-row">
+        <label>中止阈值</label>
+        <input type="range" id="corrAbort" min="0.5" max="3.0" step="0.1" value="1.5" oninput="document.getElementById('corrAbortVal').textContent=this.value+'m'">
+        <span class="val" id="corrAbortVal">1.5m</span>
+      </div>
+      <div class="ctrl-row">
+        <label>置信阈值</label>
+        <input type="range" id="confThresh" min="0.3" max="0.95" step="0.05" value="0.65" oninput="document.getElementById('confThreshVal').textContent=this.value">
+        <span class="val" id="confThreshVal">0.65</span>
+      </div>
+      <div class="ctrl-row">
+        <label>强制超车t≥</label>
+        <input type="range" id="forceTime" min="8" max="16" step="0.5" value="10.0" oninput="document.getElementById('forceTimeVal').textContent=this.value+'s'">
+        <span class="val" id="forceTimeVal">10.0s</span>
+      </div>
+    </div>
+
+    <!-- Reward Display -->
+    <div class="ctrl-section">
+      <h2>奖励分解 (最新)</h2>
+      <div class="reward-grid" id="rewardGrid">
+        <div class="reward-item"><span>L1 安全</span><span id="r-safety">0.0</span></div>
+        <div class="reward-item"><span>L2 任务</span><span id="r-task">0.0</span></div>
+        <div class="reward-item"><span>L3 决策</span><span id="r-decision">0.0</span></div>
+        <div class="reward-item"><span>L4 舒适</span><span id="r-comfort">0.0</span></div>
+        <div class="reward-item"><span>L5 不确定</span><span id="r-uncertainty">0.0</span></div>
+        <div class="reward-item reward-total"><span>总奖励</span><span id="r-total">0.0</span></div>
+        <div class="reward-item reward-total"><span>累积奖励</span><span id="r-cumulative">0.0</span></div>
+      </div>
+    </div>
+
+    <!-- Decision Log -->
+    <div class="ctrl-section">
+      <h2>决策日志</h2>
+      <div class="log-area" id="decisionLog">
+        <div class="log-entry" style="color:var(--text2);">点击"运行"开始仿真...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ============================================================
+// Configuration (from version1)
+// ============================================================
+const CONFIG = {
+  DT: 0.1, T_TOTAL: 20.0, WINDOW_SIZE: 20, DECISION_INTERVAL: 5,
+  PRED_HORIZON: 20, MC_SAMPLES: 100, CONFIDENCE_SIGMA: 4.0,
+  MIN_PRED_STD_Y: 0.35,
+  LANE_WIDTH: 4.0, LANE_CENTERS: [3.0, 7.0, 11.0, 15.0],
+  CAR_LENGTH: 4.5, CAR_WIDTH: 1.8,
+  CORRIDOR_MIN_WIDTH: 3.0, CORRIDOR_ABORT_WIDTH: 1.5, CONF_THRESHOLD: 0.65,
+};
+const N_STEPS = Math.round(CONFIG.T_TOTAL / CONFIG.DT) + 1;
+
+// Colors
+const C = {
+  V0: '#ef5350', V3: '#42a5f5', V6: '#66bb6a',
+  V0Band: 'rgba(239,83,80,0.18)', V3Band: 'rgba(66,165,245,0.18)',
+  lane: 'rgba(255,255,255,0.08)', laneEdge: 'rgba(255,255,255,0.2)',
+  text: '#e0e0e0', text2: '#8892a8', grid: 'rgba(255,255,255,0.05)',
+};
+
+// ============================================================
+// State
+// ============================================================
+let state = {
+  // Trajectory control points (Y values at t=0,4,8,12,16,20)
+  v0CtrlY: [11.0, 13.0, 10.0, 13.0, 12.0, 11.5],
+  v3CtrlY: [7.0, 5.0, 8.0, 5.0, 6.0, 6.5],
+  v0Speed: 25.0, v3Speed: 25.0,
+  // Computed trajectories
+  t: [], v0_x: [], v0_y: [], v0_h: [], v0_speed: [],
+  v3_x: [], v3_y: [], v3_h: [], v3_speed: [],
+  yGap: [],
+  // V6 state
+  v6_x: [], v6_y: [], v6_speed: [], v6_heading: [],
+  v6_lat_vel: 0, // lateral velocity for realistic Y movement
+  // Simulation
+  currentStep: 0, running: false, playSpeed: 1.0,
+  lastTime: 0, animFrame: null,
+  // Decision state
+  overtaking: false, hadAbort: false, overtakeComplete: false,
+  v6_accel: 0.0, prevSigma: null,
+  decisionLog: [], rewardHistory: [], cumulativeReward: 0,
+  // BPINN predictions (per decision)
+  bpinnPred: null,
+  // Flags
+  needsRebuild: true,
+  // Camera
+  cameraMode: 'follow',
+  camX: 200, // smooth camera position
+  // Animation
+  stepAccumulator: 0.0,
+  renderInterpStep: 0, // fractional step for smooth rendering
+  // Pre-computation (all sim data computed upfront, animation just reads it)
+  simPrecomputed: false,
+  bpinnAtStep: [],    // BPINN prediction active at each step
+  actionAtStep: [],   // Action active at each step
+  rewardAtStep: [],   // Reward breakdown at each step
+  lastRenderedStep: -1,
+};
+
+// ============================================================
+// Math Utilities
+// ============================================================
+function smoothstep(t, t0, t1) {
+  let x = Math.max(0, Math.min(1, (t - t0) / (t1 - t0)));
+  return x * x * (3 - 2 * x);
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function gaussianRandom(mean=0, std=1) {
+  // Box-Muller
+  let u1 = Math.random(), u2 = Math.random();
+  let z = Math.sqrt(-2 * Math.log(u1 + 1e-10)) * Math.cos(2 * Math.PI * u2);
+  return mean + std * z;
+}
+// Polynomial fit (least squares) — degree d
+function polyFit(xs, ys, degree) {
+  let n = xs.length;
+  let m = degree + 1;
+  // Initialize A and B FIRST (all rows must exist before filling)
+  let A = [], B = [];
+  for (let i = 0; i < m; i++) { A.push(new Array(m).fill(0)); B.push(0); }
+  // Build normal equations: A * coeffs = B
+  for (let i = 0; i < m; i++) {
+    for (let j = 0; j < n; j++) {
+      let pow = Math.pow(xs[j], i);
+      A[i][i] += pow * pow;
+      B[i] += ys[j] * pow;
+    }
+    for (let j = i + 1; j < m; j++) {
+      let s = 0;
+      for (let k = 0; k < n; k++) s += Math.pow(xs[k], i + j);
+      A[i][j] = s; A[j][i] = s;
+    }
+  }
+  // Gaussian elimination
+  for (let i = 0; i < m; i++) {
+    let mx = i;
+    for (let k = i + 1; k < m; k++) if (Math.abs(A[k][i]) > Math.abs(A[mx][i])) mx = k;
+    [A[i], A[mx]] = [A[mx], A[i]]; [B[i], B[mx]] = [B[mx], B[i]];
+    if (Math.abs(A[i][i]) < 1e-12) continue;
+    for (let k = i + 1; k < m; k++) {
+      let f = A[k][i] / A[i][i];
+      for (let j = i; j < m; j++) A[k][j] -= f * A[i][j];
+      B[k] -= f * B[i];
+    }
+  }
+  let coeffs = new Array(m).fill(0);
+  for (let i = m - 1; i >= 0; i--) {
+    let s = B[i];
+    for (let j = i + 1; j < m; j++) s -= A[i][j] * coeffs[j];
+    coeffs[i] = Math.abs(A[i][i]) < 1e-12 ? 0 : s / A[i][i];
+  }
+  return coeffs;
+}
+function polyEval(coeffs, x) {
+  let r = 0, p = 1;
+  for (let i = 0; i < coeffs.length; i++) { r += coeffs[i] * p; p *= x; }
+  return r;
+}
+// Catmull-Rom interpolation for smooth Y trajectory
+function catmullRom(points, t) {
+  // points: [{t, y}, ...] sorted by t
+  let n = points.length;
+  if (t <= points[0].t) return points[0].y;
+  if (t >= points[n-1].t) return points[n-1].y;
+  let seg = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (t >= points[i].t && t <= points[i+1].t) { seg = i; break; }
+  }
+  let p0 = points[Math.max(0, seg - 1)];
+  let p1 = points[seg];
+  let p2 = points[seg + 1];
+  let p3 = points[Math.min(n - 1, seg + 2)];
+  let dt = (p2.t - p1.t) || 1;
+  let tt = (t - p1.t) / dt;
+  let tt2 = tt * tt, tt3 = tt2 * tt;
+  return 0.5 * (
+    (2 * p1.y) +
+    (-p0.y + p2.y) * tt +
+    (2*p0.y - 5*p1.y + 4*p2.y - p3.y) * tt2 +
+    (-p0.y + 3*p1.y - 3*p2.y + p3.y) * tt3
+  );
+}
+
+// ============================================================
+// Trajectory Generation (from control points)
+// ============================================================
+function buildTrajectories() {
+  let N = N_STEPS;
+  let ctrlTimes = [0, 4, 8, 12, 16, 20];
+  let v0Pts = state.v0CtrlY.map((y, i) => ({t: ctrlTimes[i], y: y}));
+  let v3Pts = state.v3CtrlY.map((y, i) => ({t: ctrlTimes[i], y: y}));
+  
+  state.t = []; state.v0_x = []; state.v0_y = []; state.v0_h = []; state.v0_speed = [];
+  state.v3_x = []; state.v3_y = []; state.v3_h = []; state.v3_speed = []; state.yGap = [];
+
+  let v0x0 = 200.0, v3x0 = 200.0;
+  let noise = parseFloat(document.getElementById('noiseLevel').value);
+
+  for (let i = 0; i < N; i++) {
+    let ti = i * CONFIG.DT;
+    state.t.push(ti);
+    // Y from Catmull-Rom
+    let v0y = catmullRom(v0Pts, ti) + gaussianRandom(0, noise * 0.6);
+    let v3y = catmullRom(v3Pts, ti) + gaussianRandom(0, noise * 0.6);
+    // X from speed
+    if (i === 0) {
+      state.v0_x.push(v0x0); state.v3_x.push(v3x0);
+    } else {
+      state.v0_x.push(state.v0_x[i-1] + state.v0Speed * CONFIG.DT);
+      state.v3_x.push(state.v3_x[i-1] + state.v3Speed * CONFIG.DT);
+    }
+    state.v0_y.push(v0y); state.v3_y.push(v3y);
+    state.v0_speed.push(state.v0Speed); state.v3_speed.push(state.v3Speed);
+    state.v0_h.push(0); state.v3_h.push(0);
+    state.yGap.push(Math.abs(v0y - v3y));
+  }
+  state.needsRebuild = false;
+}
+
+// ============================================================
+// Forward BPINN (JS — Polynomial + MC Dropout approximation)
+// ============================================================
+class ForwardBPINN {
+  constructor(opts = {}) {
+    this.degree = opts.degree || 3;
+    this.mcSamples = opts.mcSamples || 100;
+    this.dropoutRate = opts.dropoutRate || 0.05;
+    this.minStdY = opts.minStdY || 0.35;
+    this.coeffs = null;
+    this.norm = null;
+  }
+  fit(tData, yData) {
+    let n = tData.length;
+    // Normalize t
+    let tMean = tData.reduce((a,b) => a+b, 0) / n;
+    let tStd = Math.max(0.5, Math.sqrt(tData.reduce((a,b) => a + (b-tMean)**2, 0) / n)) + 1e-8;
+    let tNorm = tData.map(t => (t - tMean) / tStd);
+    // Normalize y
+    let yMean = yData.reduce((a,b) => a+b, 0) / n;
+    let yStd = Math.max(1.0, Math.sqrt(yData.reduce((a,b) => a + (b-yMean)**2, 0) / n)) + 1e-8;
+    let yNorm = yData.map(y => (y - yMean) / yStd);
+    // Fit polynomial
+    this.coeffs = polyFit(tNorm, yNorm, this.degree);
+    this.norm = {tMean, tStd, yMean, yStd};
+  }
+  predictWithUncertainty(tFuture) {
+    let n = tFuture.length;
+    let tNorm = tFuture.map(t => (t - this.norm.tMean) / this.norm.tStd);
+    // Mean prediction
+    let mean = tNorm.map(tn => polyEval(this.coeffs, tn) * this.norm.yStd + this.norm.yMean);
+    // MC Dropout: perturb coefficients and add noise
+    let allPreds = [];
+    for (let s = 0; s < this.mcSamples; s++) {
+      // Dropout: randomly zero out some coefficient contributions
+      let perturbedCoeffs = this.coeffs.map((c, idx) => {
+        if (idx === 0) return c; // keep intercept
+        return Math.random() > this.dropoutRate ? c : c * (1 + gaussianRandom(0, 0.1));
+      });
+      let pred = tNorm.map(tn => {
+        let val = polyEval(perturbedCoeffs, tn) * this.norm.yStd + this.norm.yMean;
+        // Add observation noise
+        return val + gaussianRandom(0, this.norm.yStd * 0.05);
+      });
+      allPreds.push(pred);
+    }
+    // Compute std
+    let std = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      let sum = 0, sumSq = 0;
+      for (let s = 0; s < this.mcSamples; s++) {
+        sum += allPreds[s][i];
+        sumSq += allPreds[s][i] ** 2;
+      }
+      let m = sum / this.mcSamples;
+      let v = sumSq / this.mcSamples - m * m;
+      std[i] = Math.max(this.minStdY, Math.sqrt(Math.max(0, v)));
+    }
+    return {mean, std, allPreds};
+  }
+}
+
+// ============================================================
+// Inverse BPINN (parameter estimation)
+// ============================================================
+class InverseBPINN {
+  constructor(mcSamples = 100) { this.mcSamples = mcSamples; }
+  estimate(tTraj, xTraj, yTraj, xStd = 0.5, yStd = 0.3) {
+    let n = tTraj.length;
+    let allAccel = [], allHeading = [], allSpeed = [];
+    for (let s = 0; s < this.mcSamples; s++) {
+      let xs = xTraj.map(x => x + gaussianRandom(0, xStd));
+      let ys = yTraj.map(y => y + gaussianRandom(0, yStd));
+      let v = [], h = [], a = [];
+      for (let i = 0; i < n; i++) {
+        if (i === 0) {
+          v.push(25.0); h.push(0); a.push(0);
+        } else {
+          let dx = xs[i] - xs[i-1], dy = ys[i] - ys[i-1], dt = tTraj[i] - tTraj[i-1];
+          let vi = Math.sqrt(dx*dx + dy*dy) / dt;
+          v.push(vi);
+          h.push(Math.atan2(dy, dx));
+          a.push((vi - v[i-1]) / dt);
+        }
+      }
+      allAccel.push(a); allHeading.push(h); allSpeed.push(v);
+    }
+    // Mean
+    let accelMean = new Array(n).fill(0), headingMean = new Array(n).fill(0), speedMean = new Array(n).fill(0);
+    let accelStd = new Array(n).fill(0), headingStd = new Array(n).fill(0), speedStd = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      let sa = 0, sh = 0, ss = 0;
+      for (let s = 0; s < this.mcSamples; s++) {
+        sa += allAccel[s][i]; sh += allHeading[s][i]; ss += allSpeed[s][i];
+      }
+      accelMean[i] = sa / this.mcSamples;
+      headingMean[i] = sh / this.mcSamples;
+      speedMean[i] = ss / this.mcSamples;
+      let va = 0, vh = 0, vs = 0;
+      for (let s = 0; s < this.mcSamples; s++) {
+        va += (allAccel[s][i] - accelMean[i]) ** 2;
+        vh += (allHeading[s][i] - headingMean[i]) ** 2;
+        vs += (allSpeed[s][i] - speedMean[i]) ** 2;
+      }
+      accelStd[i] = Math.sqrt(va / this.mcSamples);
+      headingStd[i] = Math.sqrt(vh / this.mcSamples);
+      speedStd[i] = Math.sqrt(vs / this.mcSamples);
+    }
+    return {accelMean, accelStd, headingMean, headingStd, speedMean, speedStd};
+  }
+}
+
+// ============================================================
+// Reward Function (5-layer, from version1)
+// ============================================================
+function computeReward(action, corridorWidth, corridorTrend, overtakeConf,
+    v6Speed, v6Jerk, v6Accel, v6LaneChange,
+    prevSigma, currSigma, hadAbort, overtakeSuccess,
+    v6X, v0X, v3X) {
+  let rSafety = 0, rTask = 0, rDecision = 0, rComfort = 0, rUncertainty = 0;
+
+  // L1: Safety
+  if (corridorWidth < CONFIG.CORRIDOR_ABORT_WIDTH) rSafety = -1000;
+  else if (corridorWidth < CONFIG.CORRIDOR_MIN_WIDTH) rSafety = -30 * (1 - corridorWidth / CONFIG.CORRIDOR_MIN_WIDTH);
+  if (corridorTrend < -1.0 && corridorWidth < CONFIG.CORRIDOR_MIN_WIDTH) rSafety += -50;
+
+  // L2: Task
+  if (overtakeSuccess) rTask = 100;
+  else if (action === 'OVERTAKE' || action === 'CONTINUE') rTask = 10 * Math.max(0, (v6X - v3X) / 100);
+  else if (action === 'HOLD') rTask = -1;
+
+  // L3: Decision Quality
+  if ((action === 'OVERTAKE' || action === 'CONTINUE') && overtakeConf > CONFIG.CONF_THRESHOLD) rDecision += 5 * overtakeConf;
+  else if (action === 'HOLD' && overtakeConf < 0.5) rDecision += 3;
+  else if (action === 'OVERTAKE' && overtakeConf < 0.5) rDecision -= 8 * (1 - overtakeConf);
+  if (action === 'ABORT') {
+    if (corridorWidth > CONFIG.CORRIDOR_MIN_WIDTH) rDecision += 8;
+    else if (corridorWidth < CONFIG.CORRIDOR_ABORT_WIDTH) rDecision -= 10;
+  }
+  if (action === 'OVERTAKE' && hadAbort && overtakeConf > 0.8) rDecision += 3;
+
+  // L4: Comfort
+  rComfort = -0.1 * Math.abs(v6Jerk) - 0.05 * v6Accel * v6Accel;
+  if (v6LaneChange) rComfort -= 2.0;
+  rComfort += 0.1 * Math.min(v6Speed / 35, 1);
+
+  // L5: Uncertainty
+  if (prevSigma != null && currSigma != null && prevSigma > 1e-6) {
+    let infoGain = 1 - currSigma / prevSigma;
+    rUncertainty += 2 * Math.max(0, infoGain);
+  }
+  let riskMap = {OVERTAKE: 1.0, CONTINUE: 0.7, HOLD: 0.3, ABORT: 0.5};
+  rUncertainty -= 0.5 * currSigma * (riskMap[action] || 0.3);
+
+  let total = rSafety + rTask + rDecision + 0.3 * rComfort + 0.5 * rUncertainty;
+  return {total, safety: rSafety, task: rTask, decision: rDecision,
+          comfort: 0.3 * rComfort, uncertainty: 0.5 * rUncertainty};
+}
+
+// ============================================================
+// RL Decision Logic (from version1)
+// ============================================================
+function rlDecision(tCurrent, minCorridor, corridorTrend, overtakeConf,
+    overtaking, overtakeComplete, v6x, v3x) {
+  let action = 'HOLD';
+  if (!overtakeComplete) {
+    if (overtaking) {
+      if (minCorridor < CONFIG.CORRIDOR_ABORT_WIDTH) action = 'ABORT';
+      else if (corridorTrend < -0.5 && minCorridor < CONFIG.CORRIDOR_MIN_WIDTH) action = 'ABORT';
+      else if (v6x > v3x + CONFIG.CAR_LENGTH) {
+        action = 'CONTINUE';
+        if (v6x > v3x + 20) { action = 'HOLD'; overtakeComplete = true; }
+      } else action = 'CONTINUE';
+    } else {
+      if (minCorridor > CONFIG.CORRIDOR_MIN_WIDTH && overtakeConf > CONFIG.CONF_THRESHOLD) action = 'OVERTAKE';
+      else action = 'HOLD';
+    }
+    // Force overtake
+    let forceT = parseFloat(document.getElementById('forceTime').value);
+    if (tCurrent >= forceT && !overtaking && !overtakeComplete) {
+      let actualGap = Math.abs(state.v0_y[Math.round(tCurrent / CONFIG.DT)] - state.v3_y[Math.round(tCurrent / CONFIG.DT)]);
+      if (minCorridor > CONFIG.CORRIDOR_MIN_WIDTH * 0.7 || actualGap > CONFIG.CORRIDOR_MIN_WIDTH) action = 'OVERTAKE';
+    }
+    if (tCurrent >= forceT + 0.5 && overtaking && action === 'HOLD' && !overtakeComplete) action = 'CONTINUE';
+  }
+  return {action, overtakeComplete};
+}
+
+// ============================================================
+// Execute Action (V6 movement)
+// ============================================================
+function executeAction(action, tCurrent, stepIdx, plannedY, N) {
+  let v6Accel = 0;
+  let overtaking = state.overtaking;
+  let overtakeComplete = state.overtakeComplete;
+
+  let forceT = parseFloat(document.getElementById('forceTime').value);
+
+  if (action === 'OVERTAKE') {
+    overtaking = true;
+    if (tCurrent < forceT - 2) v6Accel = Math.min(5.0, (30 - state.v6_speed[stepIdx]) * 0.4);
+    else v6Accel = Math.min(7.0, (40 - state.v6_speed[stepIdx]) * 0.45);
+  } else if (action === 'CONTINUE') {
+    if (tCurrent < forceT) v6Accel = Math.min(4.0, (30 - state.v6_speed[stepIdx]) * 0.3);
+    else v6Accel = Math.min(6.0, (40 - state.v6_speed[stepIdx]) * 0.35);
+  } else if (action === 'ABORT') {
+    overtaking = false; state.hadAbort = true; v6Accel = 0;
+  } else { // HOLD
+    if (tCurrent < forceT - 4) v6Accel = Math.max(-1, Math.min(2, (25 - state.v6_speed[stepIdx]) * 0.15));
+    else if (tCurrent < forceT - 1) v6Accel = 0;
+    else v6Accel = Math.max(0, Math.min(5, (35 - state.v6_speed[stepIdx]) * 0.3));
+  }
+  state.v6_accel = v6Accel;
+
+  // Execute movement for DECISION_INTERVAL steps
+  for (let j = 0; j < CONFIG.DECISION_INTERVAL; j++) {
+    let idx = stepIdx + j;
+    if (idx >= N - 1) break;
+    state.v6_speed[idx + 1] = clamp(state.v6_speed[idx] + v6Accel * CONFIG.DT, 5, 42);
+    state.v6_x[idx + 1] = state.v6_x[idx] + state.v6_speed[idx] * CONFIG.DT;
+    // Y movement: PD controller with lateral velocity for realistic lane change
+    if (overtaking && plannedY) {
+      let tFrac = (j + 1) / CONFIG.DECISION_INTERVAL;
+      let planIdx = Math.min(Math.floor(tFrac * plannedY.length), plannedY.length - 1);
+      let targetY = plannedY[planIdx];
+      // Collision avoidance: ensure V6 stays away from V0/V3
+      let v0y = state.v0_y[idx + 1] || 9, v3y = state.v3_y[idx + 1] || 9;
+      let xOverlapV0 = Math.abs(state.v6_x[idx+1] - state.v0_x[idx+1]) < CONFIG.CAR_LENGTH;
+      let xOverlapV3 = Math.abs(state.v6_x[idx+1] - state.v3_x[idx+1]) < CONFIG.CAR_LENGTH;
+      if (xOverlapV0 && targetY > v0y) targetY = Math.max(targetY, v0y + 3.0);
+      if (xOverlapV3 && targetY < v3y) targetY = Math.min(targetY, v3y - 3.0);
+      // PD controller: lateral velocity with damping for smooth lane change
+      let latError = targetY - state.v6_y[idx];
+      state.v6_lat_vel += latError * 0.8;  // P term (proportional)
+      state.v6_lat_vel *= 0.82;            // D term (damping)
+      state.v6_lat_vel = clamp(state.v6_lat_vel, -4.0, 4.0); // limit lateral speed
+      state.v6_y[idx + 1] = state.v6_y[idx] + state.v6_lat_vel * CONFIG.DT;
+    } else if (action === 'ABORT') {
+      // Return to middle lane (Y=9) after abort
+      let targetY = 9.0;
+      let latError = targetY - state.v6_y[idx];
+      state.v6_lat_vel += latError * 0.5;
+      state.v6_lat_vel *= 0.85;
+      state.v6_lat_vel = clamp(state.v6_lat_vel, -3.0, 3.0);
+      state.v6_y[idx + 1] = state.v6_y[idx] + state.v6_lat_vel * CONFIG.DT;
+    } else {
+      // HOLD: stay in current lane, decelerate laterally
+      state.v6_lat_vel *= 0.9;
+      state.v6_y[idx + 1] = state.v6_y[idx] + state.v6_lat_vel * CONFIG.DT;
+    }
+    if (Math.abs(state.v6_x[idx+1] - state.v6_x[idx]) > 1e-6) {
+      state.v6_heading[idx+1] = Math.atan2(state.v6_y[idx+1] - state.v6_y[idx], state.v6_x[idx+1] - state.v6_x[idx]);
+    }
+  }
+  state.overtaking = overtaking;
+}
+
+// ============================================================
+// Run One Decision Step
+// ============================================================
+function runDecisionStep(stepIdx) {
+  let N = N_STEPS;
+  if (stepIdx >= N - CONFIG.DECISION_INTERVAL) return false;
+
+  let tCurrent = state.t[stepIdx];
+  let wStart = Math.max(0, stepIdx - CONFIG.WINDOW_SIZE);
+  let wEnd = stepIdx;
+
+  // Get BPINN params from UI
+  let degree = parseInt(document.getElementById('polyDegree').value);
+  let mcSamples = parseInt(document.getElementById('mcSamples').value);
+  let dropoutRate = parseFloat(document.getElementById('dropoutRate').value);
+  let minStdY = parseFloat(document.getElementById('minStdY').value);
+  let sigmaMult = parseFloat(document.getElementById('sigmaMult').value);
+
+  // Forward BPINN for V0 and V3
+  let bpinnV0 = new ForwardBPINN({degree, mcSamples, dropoutRate, minStdY});
+  let bpinnV3 = new ForwardBPINN({degree, mcSamples, dropoutRate, minStdY});
+  bpinnV0.fit(state.t.slice(wStart, wEnd), state.v0_y.slice(wStart, wEnd));
+  bpinnV3.fit(state.t.slice(wStart, wEnd), state.v3_y.slice(wStart, wEnd));
+
+  let tFuture = state.t.slice(stepIdx, Math.min(stepIdx + CONFIG.PRED_HORIZON, N));
+  let v0Pred = bpinnV0.predictWithUncertainty(tFuture);
+  let v3Pred = bpinnV3.predictWithUncertainty(tFuture);
+
+  // Y corridor
+  let v0YLower = v0Pred.mean.map((m, i) => m - sigmaMult * v0Pred.std[i]);
+  let v3YUpper = v3Pred.mean.map((m, i) => m + sigmaMult * v3Pred.std[i]);
+  let corridor = v0YLower.map((v, i) => v - v3YUpper[i]);
+  let minCorridor = Math.min(...corridor);
+  let corridorTrend = (corridor[corridor.length - 1] - corridor[0]) / (corridor.length * CONFIG.DT);
+
+  let actualYGap = Math.abs(state.v0_y[stepIdx] - state.v3_y[stepIdx]);
+  let overtakeConf = 1 - Math.exp(-Math.max(0, minCorridor) / 3.0);
+  let currSigma = (v0Pred.std.reduce((a,b) => a+b, 0) + v3Pred.std.reduce((a,b) => a+b, 0)) / (v0Pred.std.length + v3Pred.std.length);
+
+  // RL Decision
+  let {action, overtakeComplete: oc} = rlDecision(
+    tCurrent, minCorridor, corridorTrend, overtakeConf,
+    state.overtaking, state.overtakeComplete, state.v6_x[stepIdx], state.v3_x[stepIdx]
+  );
+
+  // Plan V6 trajectory
+  let plannedY = null;
+  if (action === 'OVERTAKE' || action === 'CONTINUE') {
+    plannedY = v0YLower.map((v, i) => clamp((v + v3YUpper[i]) / 2, 2, 16));
+    // Smooth with Catmull-Rom
+    let pts = plannedY.map((y, i) => ({t: tFuture[i], y}));
+    plannedY = tFuture.map(t => catmullRom(pts, t));
+  }
+
+  // Execute action
+  executeAction(action, tCurrent, stepIdx, plannedY, N);
+
+  // Check overtake
+  let overtakeSuccess = state.v6_x[stepIdx] > state.v3_x[stepIdx] + CONFIG.CAR_LENGTH;
+  if (overtakeSuccess) state.overtakeComplete = true;
+
+  // Reward
+  let reward = computeReward(
+    action, actualYGap, corridorTrend, overtakeConf,
+    state.v6_speed[stepIdx], 0, state.v6_accel, false,
+    state.prevSigma, currSigma, state.hadAbort, overtakeSuccess,
+    state.v6_x[stepIdx], state.v0_x[stepIdx], state.v3_x[stepIdx]
+  );
+  state.prevSigma = currSigma;
+  state.cumulativeReward += reward.total;
+  state.rewardHistory.push({t: tCurrent, reward, cumulative: state.cumulativeReward});
+
+  // Log
+  let logEntry = {
+    t: tCurrent, action, corridor: minCorridor, confidence: overtakeConf,
+    yGap: actualYGap, v6speed: state.v6_speed[stepIdx], v6x: state.v6_x[stepIdx],
+    v3x: state.v3_x[stepIdx], reward: reward.total
+  };
+  state.decisionLog.push(logEntry);
+  addLogEntry(logEntry);
+
+  // Store BPINN predictions for rendering
+  state.bpinnPred = {v0Pred, v3Pred, corridor, v0YLower, v3YUpper, tFuture, stepIdx};
+
+  // Update reward display
+  updateRewardDisplay(reward);
+
+  return true;
+}
+
+// ============================================================
+// Pre-compute Entire Simulation (all decisions + V6 positions upfront)
+// ============================================================
+function precomputeSimulation() {
+  // Reset V6 and decision state
+  initV6();
+  state.overtaking = false; state.hadAbort = false; state.overtakeComplete = false;
+  state.v6_accel = 0; state.prevSigma = null;
+  state.v6_lat_vel = 0;
+  state.decisionLog = []; state.rewardHistory = []; state.cumulativeReward = 0;
+  state.bpinnAtStep = new Array(N_STEPS).fill(null);
+  state.actionAtStep = new Array(N_STEPS).fill('HOLD');
+  state.rewardAtStep = new Array(N_STEPS).fill(null);
+  state.bpinnPred = null;
+
+  // Clear log display
+  document.getElementById('decisionLog').innerHTML = '';
+
+  // Run all decision steps (pre-compute V6 positions for entire timeline)
+  for (let stepIdx = CONFIG.WINDOW_SIZE; stepIdx < N_STEPS - 5; stepIdx += CONFIG.DECISION_INTERVAL) {
+    runDecisionStep(stepIdx);
+    // Store BPINN prediction for each step in this decision interval
+    if (state.bpinnPred) {
+      for (let j = 0; j < CONFIG.DECISION_INTERVAL && stepIdx + j < N_STEPS; j++) {
+        state.bpinnAtStep[stepIdx + j] = state.bpinnPred;
+      }
+    }
+    // Store action and reward for each step
+    let lastEntry = state.decisionLog[state.decisionLog.length - 1];
+    let lastReward = state.rewardHistory[state.rewardHistory.length - 1];
+    if (lastEntry) {
+      for (let j = 0; j < CONFIG.DECISION_INTERVAL && stepIdx + j < N_STEPS; j++) {
+        state.actionAtStep[stepIdx + j] = lastEntry.action;
+        if (lastReward) state.rewardAtStep[stepIdx + j] = lastReward.reward;
+      }
+    }
+  }
+
+  state.simPrecomputed = true;
+  state.currentStep = 0;
+  state.stepAccumulator = 0.0;
+  state.renderInterpStep = 0;
+  state.camX = state.v6_x[0];
+  state.lastRenderedStep = -1;
+
+  // Update reward display to first step
+  let firstReward = state.rewardAtStep[CONFIG.WINDOW_SIZE];
+  if (firstReward) updateRewardDisplay(firstReward);
+}
+
+// ============================================================
+// Speed Info Updater
+// ============================================================
+function updateSpeedInfo() {
+  let v = parseFloat(document.getElementById('speedSlider').value);
+  document.getElementById('speedVal').textContent = v.toFixed(1) + 'x';
+  // Total simulation steps (minus 1 for 0-indexing)
+  let totalSteps = N_STEPS - 1;
+  let totalSec = Math.round(totalSteps / v);
+  let label;
+  if (totalSec >= 60) {
+    let m = Math.floor(totalSec / 60);
+    let s = totalSec % 60;
+    label = m + '分' + s + '秒';
+  } else {
+    label = totalSec + '秒';
+  }
+  document.getElementById('speedTime').textContent = '≈' + label;
+}
+
+// ============================================================
+// Initialize V6
+// ============================================================
+function initV6() {
+  let N = N_STEPS;
+  state.v6_x = new Array(N).fill(0);
+  state.v6_y = new Array(N).fill(0);
+  state.v6_speed = new Array(N).fill(0);
+  state.v6_heading = new Array(N).fill(0);
+  state.v6_lat_vel = 0;
+  // Start in middle lane (Y=9) between V0 (lane 3, Y≈11) and V3 (lane 2, Y≈7)
+  state.v6_x[0] = 175.0; state.v6_y[0] = 9.0; state.v6_speed[0] = 25.0;
+  for (let i = 1; i <= CONFIG.WINDOW_SIZE; i++) {
+    state.v6_x[i] = state.v6_x[i-1] + 25.0 * CONFIG.DT;
+    state.v6_y[i] = 9.0; state.v6_speed[i] = 25.0;
+  }
+}
+
+// ============================================================
+// Reset Simulation
+// ============================================================
+function resetSim() {
+  state.running = false;
+  document.getElementById('btnRun').textContent = '▶ 运行';
+  document.getElementById('btnRun').classList.add('primary');
+  state.currentStep = 0;
+  state.simPrecomputed = false;
+  state.overtaking = false; state.hadAbort = false; state.overtakeComplete = false;
+  state.v6_accel = 0; state.prevSigma = null;
+  state.v6_lat_vel = 0;
+  state.decisionLog = []; state.rewardHistory = []; state.cumulativeReward = 0;
+  state.bpinnPred = null;
+  state.bpinnAtStep = []; state.actionAtStep = []; state.rewardAtStep = [];
+  state.needsRebuild = true;
+  state.stepAccumulator = 0.0;
+  state.renderInterpStep = 0;
+  state.camX = 200;
+  state.lastRenderedStep = -1;
+  buildTrajectories();
+  initV6();
+  document.getElementById('decisionLog').innerHTML = '<div class="log-entry" style="color:var(--text2);">已重置 — 点击"运行"开始仿真</div>';
+  updateRewardDisplay({total:0, safety:0, task:0, decision:0, comfort:0, uncertainty:0});
+  render();
+}
+
+// ============================================================
+// Toggle Run
+// ============================================================
+function toggleRun() {
+  if (!state.running) {
+    // If simulation completed, restart from beginning
+    if (state.currentStep >= N_STEPS - 1) {
+      state.currentStep = 0;
+      state.stepAccumulator = 0;
+      state.renderInterpStep = 0;
+      state.camX = state.v6_x[0] || 200;
+    }
+    // Starting or resuming
+    if (state.currentStep === 0 || !state.simPrecomputed || state.needsRebuild) {
+      // Need pre-computation: show loading state
+      let btn = document.getElementById('btnRun');
+      btn.textContent = '⏳ 预计算中...';
+      btn.disabled = true;
+      // Allow UI to update before heavy computation
+      setTimeout(() => {
+        buildTrajectories();
+        precomputeSimulation();
+        btn.disabled = false;
+        startAnimation();
+      }, 50);
+    } else {
+      startAnimation();
+    }
+  } else {
+    // Pausing
+    state.running = false;
+    let btn = document.getElementById('btnRun');
+    btn.textContent = '▶ 继续'; btn.classList.add('primary'); btn.classList.remove('active');
+    if (state.animFrame) cancelAnimationFrame(state.animFrame);
+  }
+}
+
+function startAnimation() {
+  state.running = true;
+  let btn = document.getElementById('btnRun');
+  btn.textContent = '⏸ 暂停'; btn.classList.remove('primary'); btn.classList.add('active');
+  state.lastTime = performance.now();
+  animLoop();
+}
+
+// ============================================================
+// Single Step
+// ============================================================
+function stepSim() {
+  // Pre-compute simulation if needed
+  if (!state.simPrecomputed || state.needsRebuild) {
+    buildTrajectories();
+    precomputeSimulation();
+  }
+  // Advance one decision interval (5 steps = 0.5s)
+  state.currentStep = Math.min(state.currentStep + CONFIG.DECISION_INTERVAL, N_STEPS - 1);
+  render();
+}
+
+// ============================================================
+// Animation Loop
+// ============================================================
+function animLoop() {
+  if (!state.running) return;
+  let now = performance.now();
+  let dt = (now - state.lastTime) / 1000;
+  state.lastTime = now;
+  let speedMul = parseFloat(document.getElementById('speedSlider').value);
+
+  // speedMul = simulation steps per real second
+  // Each step = 0.1s sim time
+  // speedMul=1 → 1 step/sec → 0.1s sim per 1s real → 10s sim takes 100s
+  // speedMul=0.5 → 0.5 step/sec → 10s sim takes 200s (3.3 min, very detailed)
+  // speedMul=5 → 5 steps/sec → 10s sim takes 20s (quick overview)
+  state.stepAccumulator += dt * speedMul;
+
+  // Advance one simulation step at a time (0.1s each)
+  while (state.stepAccumulator >= 1.0) {
+    state.stepAccumulator -= 1.0;
+    if (state.currentStep < N_STEPS - 1) {
+      state.currentStep++;
+    } else {
+      state.running = false;
+      document.getElementById('btnRun').textContent = '✓ 完成';
+      document.getElementById('btnRun').classList.add('primary');
+      break;
+    }
+  }
+  // Fractional step for smooth interpolation between steps
+  state.renderInterpStep = state.stepAccumulator;
+
+  // Update reward display when step changes
+  if (state.currentStep !== state.lastRenderedStep) {
+    state.lastRenderedStep = state.currentStep;
+    let currentReward = state.rewardAtStep[state.currentStep];
+    if (currentReward) updateRewardDisplay(currentReward);
+  }
+
+  render();
+  if (state.running) state.animFrame = requestAnimationFrame(animLoop);
+}
+
+// ============================================================
+// Rendering
+// ============================================================
+function render() {
+  let canvas = document.getElementById('mainCanvas');
+  let ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  // Progress bar at top
+  let progress = state.currentStep / (N_STEPS - 1);
+  ctx.fillStyle = 'rgba(79,195,247,0.1)';
+  ctx.fillRect(0, 0, w, 3);
+  ctx.fillStyle = C.V6;
+  ctx.fillRect(0, 0, w * progress, 3);
+
+  let stepIdx = state.currentStep;
+
+  // ---- Interpolated positions for smooth rendering ----
+  let interp = state.renderInterpStep; // 0~1 fractional step
+  let iNext = Math.min(stepIdx + 1, N_STEPS - 1);
+  function iX(arr) { return arr[stepIdx] + (arr[iNext] - arr[stepIdx]) * interp; }
+  function iY(arr) { return arr[stepIdx] + (arr[iNext] - arr[stepIdx]) * interp; }
+
+  let v6xRender = iX(state.v6_x), v6yRender = iY(state.v6_y);
+  let v0xRender = iX(state.v0_x), v0yRender = iY(state.v0_y);
+  let v3xRender = iX(state.v3_x), v3yRender = iY(state.v3_y);
+  let v6speedRender = state.v6_speed[stepIdx] + (state.v6_speed[iNext] - state.v6_speed[stepIdx]) * interp;
+
+  // ---- Camera (conveyor belt follows V6) ----
+  let xMin, xMax, yMin = -1, yMax = 19;
+  let camMode = state.cameraMode;
+  if (camMode === 'follow') {
+    // Conveyor belt: show 30m behind V6, 70m ahead (100m window)
+    let viewAhead = 70, viewBehind = 30;
+    let targetX = v6xRender;
+    // Smooth camera lerp (slower = more cinematic conveyor belt feel)
+    state.camX = state.camX + (targetX - state.camX) * 0.05;
+    xMin = state.camX - viewBehind;
+    xMax = state.camX + viewAhead;
+  } else if (camMode === 'focus') {
+    // Focus: center on the 3 cars' midpoint
+    let cx = (v6xRender + v0xRender + v3xRender) / 3;
+    xMin = cx - 35; xMax = cx + 35;
+  } else {
+    // Wide: auto-fit to show V6 and surrounding context
+    let center = v6xRender;
+    xMin = center - 50; xMax = center + 100;
+  }
+  let scaleX = (x) => ((x - xMin) / (xMax - xMin)) * w;
+  let scaleY = (y) => h - ((y - yMin) / (yMax - yMin)) * h;
+
+  // ---- Draw road (conveyor belt effect) ----
+  ctx.strokeStyle = C.lane; ctx.lineWidth = 1.5;
+  for (let ly of CONFIG.LANE_CENTERS) {
+    ctx.beginPath(); ctx.setLineDash([12, 8]);
+    ctx.moveTo(0, scaleY(ly)); ctx.lineTo(w, scaleY(ly)); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Lane edges
+  ctx.strokeStyle = C.laneEdge; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, scaleY(1)); ctx.lineTo(w, scaleY(1)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, scaleY(17)); ctx.lineTo(w, scaleY(17)); ctx.stroke();
+  // Lane labels (follow screen position)
+  ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.font = '10px Consolas';
+  for (let li = 0; li < CONFIG.LANE_CENTERS.length; li++) {
+    ctx.fillText('L' + (li+1), 4, scaleY(CONFIG.LANE_CENTERS[li]) - 6);
+  }
+  // Distance markers on road
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.font = '9px Consolas';
+  let markerStart = Math.floor(xMin / 10) * 10;
+  for (let mx = markerStart; mx < xMax; mx += 10) {
+    let px = scaleX(mx);
+    if (px < 0 || px > w) continue;
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
+    ctx.fillText(mx + 'm', px + 2, 12);
+  }
+
+  // ---- Draw trajectories (only visible portion) ----
+  // V0/V3: past (solid) + future (faded dashed)
+  drawTrajectoryClipped(ctx, state.v0_x, state.v0_y, stepIdx, C.V0, scaleX, scaleY, 2, xMin, xMax);
+  drawTrajectoryClipped(ctx, state.v3_x, state.v3_y, stepIdx, C.V3, scaleX, scaleY, 2, xMin, xMax);
+  // V6: past only (solid), future is conditional green dashed
+  drawTrajectoryClipped(ctx, state.v6_x, state.v6_y, stepIdx, C.V6, scaleX, scaleY, 3, xMin, xMax, true);
+
+  // ---- BPINN predictions (if available) ----
+  let currentPred = state.bpinnAtStep[stepIdx];
+  if (currentPred) {
+    let pred = currentPred;
+    let baseIdx = pred.stepIdx;
+    let sigmaMult = parseFloat(document.getElementById('sigmaMult').value);
+    // V0 confidence band
+    ctx.fillStyle = C.V0Band;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < pred.tFuture.length; i++) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v0_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      if (!started) { ctx.moveTo(scaleX(xp), scaleY(pred.v0YLower[i])); started = true; }
+      else ctx.lineTo(scaleX(xp), scaleY(pred.v0YLower[i]));
+    }
+    for (let i = pred.tFuture.length - 1; i >= 0; i--) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v0_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      let upper = pred.v0Pred.mean[i] + sigmaMult * pred.v0Pred.std[i];
+      ctx.lineTo(scaleX(xp), scaleY(upper));
+    }
+    ctx.closePath(); ctx.fill();
+
+    // V3 confidence band
+    ctx.fillStyle = C.V3Band;
+    ctx.beginPath(); started = false;
+    for (let i = 0; i < pred.tFuture.length; i++) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v3_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      let lower = pred.v3Pred.mean[i] - sigmaMult * pred.v3Pred.std[i];
+      if (!started) { ctx.moveTo(scaleX(xp), scaleY(lower)); started = true; }
+      else ctx.lineTo(scaleX(xp), scaleY(lower));
+    }
+    for (let i = pred.tFuture.length - 1; i >= 0; i--) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v3_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      ctx.lineTo(scaleX(xp), scaleY(pred.v3YUpper[i]));
+    }
+    ctx.closePath(); ctx.fill();
+
+    // Predicted V0/V3 mean lines (dashed)
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = C.V0; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6;
+    ctx.beginPath(); started = false;
+    for (let i = 0; i < pred.tFuture.length; i++) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v0_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      if (!started) { ctx.moveTo(scaleX(xp), scaleY(pred.v0Pred.mean[i])); started = true; }
+      else ctx.lineTo(scaleX(xp), scaleY(pred.v0Pred.mean[i]));
+    }
+    ctx.stroke();
+    ctx.strokeStyle = C.V3;
+    ctx.beginPath(); started = false;
+    for (let i = 0; i < pred.tFuture.length; i++) {
+      let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+      let xp = state.v3_x[predIdx];
+      if (xp < xMin || xp > xMax) continue;
+      if (!started) { ctx.moveTo(scaleX(xp), scaleY(pred.v3Pred.mean[i])); started = true; }
+      else ctx.lineTo(scaleX(xp), scaleY(pred.v3Pred.mean[i]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+    // ---- Green dashed V6 predicted overtaking trajectory ----
+    // Only shown when corridor has space AND conditions are met
+    let minCorrPred = Math.min(...pred.corridor);
+    let confPred = 1 - Math.exp(-Math.max(0, minCorrPred) / 3.0);
+    let corrMinThresh = parseFloat(document.getElementById('corrMin').value);
+    let confThresh = parseFloat(document.getElementById('confThresh').value);
+
+    if (minCorrPred > corrMinThresh && confPred > confThresh) {
+      // Draw green dashed predicted path through corridor center
+      ctx.strokeStyle = C.V6;
+      ctx.setLineDash([10, 6]);
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      let pathStarted = false;
+      for (let i = 0; i < pred.tFuture.length; i++) {
+        let predIdx = Math.min(baseIdx + i, N_STEPS - 1);
+        let xp = state.v6_x[predIdx];
+        if (xp < xMin || xp > xMax) { pathStarted = false; continue; }
+        // Corridor center = midpoint of V0 lower band and V3 upper band
+        let yp = (pred.v0YLower[i] + pred.v3YUpper[i]) / 2;
+        if (!pathStarted) { ctx.moveTo(scaleX(xp), scaleY(yp)); pathStarted = true; }
+        else ctx.lineTo(scaleX(xp), scaleY(yp));
+      }
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+      // "可超车" label at the corridor
+      let midI = Math.floor(pred.tFuture.length / 2);
+      if (midI < pred.tFuture.length) {
+        let midPredIdx = Math.min(baseIdx + midI, N_STEPS - 1);
+        let midXp = state.v6_x[midPredIdx];
+        let midYp = (pred.v0YLower[midI] + pred.v3YUpper[midI]) / 2;
+        if (midXp >= xMin && midXp <= xMax) {
+          ctx.fillStyle = 'rgba(102,187,106,0.9)';
+          ctx.font = 'bold 10px Microsoft YaHei';
+          ctx.fillText('⚡ 可超车', scaleX(midXp) + 5, scaleY(midYp) - 8);
+        }
+      }
+    }
+  }
+
+  // ---- Draw cars (using interpolated positions) ----
+  drawCar(ctx, v0xRender, v0yRender, state.v0_h[stepIdx], C.V0, scaleX, scaleY);
+  drawCar(ctx, v3xRender, v3yRender, state.v3_h[stepIdx], C.V3, scaleX, scaleY);
+  drawCar(ctx, v6xRender, v6yRender, state.v6_heading[stepIdx], C.V6, scaleX, scaleY, true);
+
+  // Labels
+  ctx.fillStyle = C.V0; ctx.font = 'bold 11px Consolas';
+  ctx.fillText('V0', scaleX(v0xRender) + 10, scaleY(v0yRender) - 8);
+  ctx.fillStyle = C.V3;
+  ctx.fillText('V3', scaleX(v3xRender) + 10, scaleY(v3yRender) - 8);
+  ctx.fillStyle = C.V6;
+  ctx.fillText('V6', scaleX(v6xRender) + 10, scaleY(v6yRender) - 8);
+
+  // Camera indicator
+  ctx.fillStyle = 'rgba(79,195,247,0.4)'; ctx.font = '9px Consolas';
+  let camLabel = camMode === 'follow' ? '📷 跟随V6' : camMode === 'focus' ? '📷 聚焦三车' : '📷 全景';
+  ctx.fillText(camLabel, w - 70, 14);
+
+  // Update info bar
+  let gap = Math.abs(v0yRender - v3yRender);
+  let predForInfo = state.bpinnAtStep[stepIdx];
+  let corridor = predForInfo ? Math.min(...predForInfo.corridor) : gap;
+  let conf = predForInfo ? 1 - Math.exp(-Math.max(0, corridor) / 3) : 0;
+  let lastAction = state.actionAtStep[stepIdx] || 'HOLD';
+  document.getElementById('info-time').textContent = state.t[stepIdx].toFixed(1) + 's';
+  document.getElementById('info-gap').textContent = gap.toFixed(1) + 'm';
+  document.getElementById('info-corridor').textContent = corridor.toFixed(1) + 'm';
+  document.getElementById('info-conf').textContent = conf.toFixed(2);
+  document.getElementById('info-v6speed').textContent = v6speedRender.toFixed(1) + ' m/s';
+  document.getElementById('info-action').textContent = lastAction;
+  document.getElementById('info-overtake').textContent = (state.v6_x[stepIdx] > state.v3_x[stepIdx] + CONFIG.CAR_LENGTH) ? '✓ 已完成' : '进行中';
+
+  // Update charts
+  drawGapChart();
+  drawSpeedChart();
+  drawRewardChart();
+}
+
+function drawTrajectory(ctx, xs, ys, currentIdx, color, scaleX, scaleY, lw) {
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.globalAlpha = 0.7;
+  ctx.beginPath();
+  for (let i = 0; i <= currentIdx; i++) {
+    if (i === 0) ctx.moveTo(scaleX(xs[i]), scaleY(ys[i]));
+    else ctx.lineTo(scaleX(xs[i]), scaleY(ys[i]));
+  }
+  ctx.stroke();
+  // Future (faded)
+  ctx.globalAlpha = 0.2;
+  ctx.beginPath();
+  for (let i = currentIdx; i < xs.length; i++) {
+    if (i === currentIdx) ctx.moveTo(scaleX(xs[i]), scaleY(ys[i]));
+    else ctx.lineTo(scaleX(xs[i]), scaleY(ys[i]));
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawTrajectoryClipped(ctx, xs, ys, currentIdx, color, scaleX, scaleY, lw, xMin, xMax, pastOnly) {
+  // Draw only the visible portion (conveyor belt mode)
+  // Past trajectory (solid)
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i <= currentIdx; i++) {
+    if (xs[i] < xMin || xs[i] > xMax) { started = false; continue; }
+    if (!started) { ctx.moveTo(scaleX(xs[i]), scaleY(ys[i])); started = true; }
+    else ctx.lineTo(scaleX(xs[i]), scaleY(ys[i]));
+  }
+  ctx.stroke();
+  // Future trajectory (faded dashed) — skip if pastOnly (V6 uses conditional green dashed)
+  if (!pastOnly) {
+    ctx.globalAlpha = 0.25; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); started = false;
+    for (let i = currentIdx; i < xs.length; i++) {
+      if (xs[i] < xMin || xs[i] > xMax) { started = false; continue; }
+      if (!started) { ctx.moveTo(scaleX(xs[i]), scaleY(ys[i])); started = true; }
+      else ctx.lineTo(scaleX(xs[i]), scaleY(ys[i]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]); 
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawCar(ctx, x, y, heading, color, scaleX, scaleY, isV6=false) {
+  let cx = scaleX(x), cy = scaleY(y);
+  let w = 14, h = 7; // car dimensions in pixels
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-heading);
+  // Car body
+  ctx.fillStyle = color; ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.roundRect(-w/2, -h/2, w, h, 2);
+  ctx.fill();
+  // Border
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 1;
+  ctx.stroke();
+  // Windshield
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillRect(-w/4, -h/2 + 1, w/2, h/2 - 1);
+  ctx.restore();
+  // Glow for V6
+  if (isV6) {
+    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.fillStyle = color; ctx.globalAlpha = 0.3;
+    ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+}
+
+// ============================================================
+// Charts
+// ============================================================
+function drawGapChart() {
+  let canvas = document.getElementById('gapChart');
+  let ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  let N = state.yGap.length;
+  let maxGap = Math.max(...state.yGap, 10) * 1.1;
+  let scaleX = (i) => (i / (N - 1)) * w;
+  let scaleY = (v) => h - (v / maxGap) * (h - 10) - 5;
+  // Threshold lines
+  ctx.strokeStyle = 'rgba(102,187,106,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(0, scaleY(CONFIG.CORRIDOR_MIN_WIDTH)); ctx.lineTo(w, scaleY(CONFIG.CORRIDOR_MIN_WIDTH)); ctx.stroke();
+  ctx.strokeStyle = 'rgba(239,83,80,0.4)';
+  ctx.beginPath(); ctx.moveTo(0, scaleY(CONFIG.CORRIDOR_ABORT_WIDTH)); ctx.lineTo(w, scaleY(CONFIG.CORRIDOR_ABORT_WIDTH)); ctx.stroke();
+  ctx.setLineDash([]);
+  // Gap line
+  ctx.strokeStyle = '#ab47bc'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= state.currentStep; i++) {
+    if (i === 0) ctx.moveTo(scaleX(i), scaleY(state.yGap[i]));
+    else ctx.lineTo(scaleX(i), scaleY(state.yGap[i]));
+  }
+  ctx.stroke();
+  // Future (faded)
+  ctx.globalAlpha = 0.2;
+  ctx.beginPath();
+  for (let i = state.currentStep; i < N; i++) {
+    if (i === state.currentStep) ctx.moveTo(scaleX(i), scaleY(state.yGap[i]));
+    else ctx.lineTo(scaleX(i), scaleY(state.yGap[i]));
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Labels
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '8px Consolas';
+  ctx.fillText('min', 2, scaleY(CONFIG.CORRIDOR_MIN_WIDTH) - 2);
+}
+
+function drawSpeedChart() {
+  let canvas = document.getElementById('speedChart');
+  let ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  let N = state.v6_speed.length;
+  let scaleX = (i) => (i / (N - 1)) * w;
+  let scaleY = (v) => h - ((v - 15) / 30) * (h - 10) - 5;
+  // V0/V3 speed lines
+  ctx.strokeStyle = C.V0; ctx.lineWidth = 1; ctx.globalAlpha = 0.4;
+  ctx.beginPath();
+  for (let i = 0; i <= state.currentStep; i++) {
+    if (i === 0) ctx.moveTo(scaleX(i), scaleY(state.v0_speed[i]));
+    else ctx.lineTo(scaleX(i), scaleY(state.v0_speed[i]));
+  }
+  ctx.stroke();
+  ctx.strokeStyle = C.V3;
+  ctx.beginPath();
+  for (let i = 0; i <= state.currentStep; i++) {
+    if (i === 0) ctx.moveTo(scaleX(i), scaleY(state.v3_speed[i]));
+    else ctx.lineTo(scaleX(i), scaleY(state.v3_speed[i]));
+  }
+  ctx.stroke();
+  // V6 speed
+  ctx.strokeStyle = C.V6; ctx.lineWidth = 2.5; ctx.globalAlpha = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= state.currentStep; i++) {
+    if (i === 0) ctx.moveTo(scaleX(i), scaleY(state.v6_speed[i]));
+    else ctx.lineTo(scaleX(i), scaleY(state.v6_speed[i]));
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Decision markers
+  for (let log of state.decisionLog) {
+    let idx = Math.round(log.t / CONFIG.DT);
+    let color = log.action === 'OVERTAKE' ? C.V6 : log.action === 'ABORT' ? C.V0 : log.action === 'CONTINUE' ? C.V3 : '#78909c';
+    ctx.fillStyle = color; ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.arc(scaleX(idx), scaleY(log.v6speed), 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawRewardChart() {
+  let canvas = document.getElementById('rewardChart');
+  let ctx = canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+  let w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+  if (state.rewardHistory.length === 0) return;
+  let maxR = Math.max(...state.rewardHistory.map(r => r.cumulative), 1);
+  let minR = Math.min(...state.rewardHistory.map(r => r.cumulative), 0);
+  let range = maxR - minR || 1;
+  let scaleX = (i) => (i / Math.max(1, state.rewardHistory.length - 1)) * w;
+  let scaleY = (v) => h - ((v - minR) / range) * (h - 10) - 5;
+  // Fill
+  ctx.fillStyle = 'rgba(102,187,106,0.1)';
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let i = 0; i < state.rewardHistory.length; i++) {
+    ctx.lineTo(scaleX(i), scaleY(state.rewardHistory[i].cumulative));
+  }
+  ctx.lineTo(w, h); ctx.closePath(); ctx.fill();
+  // Line
+  ctx.strokeStyle = '#ffa726'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < state.rewardHistory.length; i++) {
+    if (i === 0) ctx.moveTo(scaleX(i), scaleY(state.rewardHistory[i].cumulative));
+    else ctx.lineTo(scaleX(i), scaleY(state.rewardHistory[i].cumulative));
+  }
+  ctx.stroke();
+  // Per-step rewards (bars)
+  for (let i = 0; i < state.rewardHistory.length; i++) {
+    let r = state.rewardHistory[i].reward.total;
+    let y0 = scaleY(0);
+    let y1 = scaleY(r);
+    ctx.fillStyle = r >= 0 ? 'rgba(102,187,106,0.4)' : 'rgba(239,83,80,0.4)';
+    ctx.fillRect(scaleX(i) - 2, Math.min(y0, y1), 4, Math.abs(y1 - y0));
+  }
+}
+
+// ============================================================
+// Log & Reward Display
+// ============================================================
+function addLogEntry(entry) {
+  let logDiv = document.getElementById('decisionLog');
+  if (state.decisionLog.length === 1) logDiv.innerHTML = '';
+  let div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `<span style="color:var(--text2);">[${entry.t.toFixed(1)}s]</span> ` +
+    `<span class="act act-${entry.action}">${entry.action}</span> ` +
+    `gap=<span style="color:#ab47bc;">${entry.yGap.toFixed(1)}m</span> ` +
+    `corr=<span style="color:var(--accent);">${entry.corridor.toFixed(1)}m</span> ` +
+    `conf=<span style="color:var(--orange);">${entry.confidence.toFixed(2)}</span> ` +
+    `v6=<span style="color:var(--green);">${entry.v6speed.toFixed(0)}</span> ` +
+    `R=<span style="color:var(--gold);">${entry.reward.toFixed(1)}</span>`;
+  logDiv.appendChild(div);
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function updateRewardDisplay(r) {
+  document.getElementById('r-safety').textContent = r.safety.toFixed(1);
+  document.getElementById('r-task').textContent = r.task.toFixed(1);
+  document.getElementById('r-decision').textContent = r.decision.toFixed(1);
+  document.getElementById('r-comfort').textContent = r.comfort.toFixed(1);
+  document.getElementById('r-uncertainty').textContent = r.uncertainty.toFixed(1);
+  document.getElementById('r-total').textContent = r.total.toFixed(1);
+  document.getElementById('r-cumulative').textContent = state.cumulativeReward.toFixed(1);
+}
+
+// ============================================================
+// Trajectory Editor UI
+// ============================================================
+function buildTrajectoryEditors() {
+  let ctrlTimes = ['0s', '4s', '8s', '12s', '16s', '20s'];
+  ['v0', 'v3'].forEach((v) => {
+    let container = document.getElementById(v + 'Points');
+    container.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+      let div = document.createElement('div');
+      div.className = 'traj-pt';
+      let slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '2'; slider.max = '17'; slider.step = '0.5';
+      slider.value = state[v + 'CtrlY'][i];
+      slider.style.accentColor = v === 'v0' ? C.V0 : C.V3;
+      slider.oninput = function() {
+        state[v + 'CtrlY'][i] = parseFloat(this.value);
+        valSpan.textContent = parseFloat(this.value).toFixed(1);
+        state.needsRebuild = true;
+        state.simPrecomputed = false;
+        buildTrajectories();
+        if (state.decisionLog.length === 0) { initV6(); render(); }
+        else render();
+      };
+      let valSpan = document.createElement('span');
+      valSpan.style.fontSize = '9px';
+      valSpan.style.color = v === 'v0' ? C.V0 : C.V3;
+      valSpan.style.fontWeight = '600';
+      valSpan.textContent = parseFloat(slider.value).toFixed(1);
+      let label = document.createElement('label');
+      label.textContent = ctrlTimes[i];
+      div.appendChild(valSpan);
+      div.appendChild(slider);
+      div.appendChild(label);
+      container.appendChild(div);
+    }
+  });
+}
+
+// ============================================================
+// Presets
+// ============================================================
+function loadPreset(name) {
+  const presets = {
+    standard: {
+      // gap: 4→8→2→8→6→5 (open-narrow-open pattern over 20s)
+      v0: [11, 13, 10, 13, 12, 11.5], v3: [7, 5, 8, 5, 6, 6.5],
+      v0s: 25, v3s: 25
+    },
+    wide: {
+      // gap: 4→11→3→11→7→6 (large swings)
+      v0: [11, 14.5, 8.5, 14.5, 13, 12], v3: [7, 3.5, 11, 3.5, 5, 6],
+      v0s: 25, v3s: 25
+    },
+    narrow: {
+      // gap: 4→3→5→2→4→3 (tight, challenging)
+      v0: [11, 10, 12, 9, 11.5, 10.5], v3: [7, 7.5, 6, 8, 7, 7.5],
+      v0s: 25, v3s: 25
+    },
+    oscillate: {
+      // gap: 4→8→2→8→2→8 (fast oscillation)
+      v0: [11, 13, 9, 13, 9, 13], v3: [7, 5, 9, 5, 9, 5],
+      v0s: 28, v3s: 22
+    },
+    complex: {
+      // gap: 4→7→3→6→9→4 (irregular pattern)
+      v0: [11, 12.5, 10, 11.5, 13.5, 11], v3: [7, 5.5, 7.5, 6, 4.5, 6.5],
+      v0s: 25, v3s: 25
+    },
+  };
+  let p = presets[name];
+  if (!p) return;
+  state.v0CtrlY = [...p.v0]; state.v3CtrlY = [...p.v3];
+  state.v0Speed = p.v0s; state.v3Speed = p.v3s;
+  document.getElementById('v0Speed').value = p.v0s;
+  document.getElementById('v3Speed').value = p.v3s;
+  document.getElementById('v0SpeedVal').textContent = p.v0s;
+  document.getElementById('v3SpeedVal').textContent = p.v3s;
+  buildTrajectoryEditors();
+  resetSim();
+}
+
+// ============================================================
+// Init
+// ============================================================
+window.addEventListener('load', () => {
+  // Round rect polyfill
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+      this.beginPath();
+      this.moveTo(x + r, y);
+      this.lineTo(x + w - r, y); this.quadraticCurveTo(x + w, y, x + w, y + r);
+      this.lineTo(x + w, y + h - r); this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      this.lineTo(x + r, y + h); this.quadraticCurveTo(x, y + h, x, y + h - r);
+      this.lineTo(x, y + r); this.quadraticCurveTo(x, y, x + r, y);
+      this.closePath(); return this;
+    };
+  }
+  buildTrajectoryEditors();
+  updateSpeedInfo();
+  // Speed sliders
+  document.getElementById('v0Speed').oninput = function() {
+    state.v0Speed = parseFloat(this.value);
+    document.getElementById('v0SpeedVal').textContent = this.value;
+    state.needsRebuild = true; state.simPrecomputed = false; buildTrajectories();
+    if (state.decisionLog.length === 0) { initV6(); render(); }
+  };
+  document.getElementById('v3Speed').oninput = function() {
+    state.v3Speed = parseFloat(this.value);
+    document.getElementById('v3SpeedVal').textContent = this.value;
+    state.needsRebuild = true; state.simPrecomputed = false; buildTrajectories();
+    if (state.decisionLog.length === 0) { initV6(); render(); }
+  };
+  buildTrajectories();
+  initV6();
+  render();
+  window.addEventListener('resize', render);
+});
+</script>
+</body>
+</html>

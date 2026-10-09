@@ -1,0 +1,8 @@
+jax
+flax
+optax
+optuna
+numpy
+pandas
+matplotlib
+scipy
